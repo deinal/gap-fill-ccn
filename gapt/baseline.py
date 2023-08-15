@@ -3,15 +3,15 @@ import torch.nn as nn
 import pytorch_lightning as pl
 import torch.nn.functional as F
 from torch.optim.lr_scheduler import LambdaLR
-from gapt.utils import cyclic_positional_encoding
+from gapt.utils import baseline_positional_encoding
 from momo import Momo
 
 
-class GapT(pl.LightningModule):
-    def __init__(self, d_input, d_model, n_head, d_feedforward, n_layers, d_output, 
+class Baseline(pl.LightningModule):
+    def __init__(self, d_input, d_model, n_head, d_output, 
                  learning_rate, dropout_rate, optimizer, use_attention_mask):
         super().__init__()
-
+        
         self.d_model = d_model
         self.n_head = n_head
         self.learning_rate = learning_rate
@@ -19,59 +19,62 @@ class GapT(pl.LightningModule):
         self.use_attention_mask = use_attention_mask
 
         self.embedding_cov = nn.Linear(d_input, d_model)
+        self.embedding_cat = nn.Linear(d_input + d_output, d_model)
         self.embedding_tgt = nn.Linear(d_output, d_model)
         
-        transformer_enc_layer = nn.TransformerEncoderLayer(
-            d_model=d_model, nhead=n_head, dim_feedforward=d_feedforward, 
-            activation='gelu', batch_first=True
-        )
-
-        self.transformer_enc = nn.TransformerEncoder(
-            transformer_enc_layer, num_layers=n_layers
+        self.multihead_attention = nn.MultiheadAttention(
+            embed_dim=d_model, num_heads=n_head, batch_first=True
         )
 
         self.feed_forward = nn.Sequential(
-            nn.Linear(2 * d_model, 128),
-            nn.GELU(),
+            nn.Linear(3 * d_model, 128),
+            nn.LeakyReLU(),
             nn.Dropout(dropout_rate),
             nn.Linear(128, 32),
-            nn.GELU(),
+            nn.LeakyReLU(),
             nn.Dropout(dropout_rate),
         )
         
         self.head = nn.Linear(32, d_output)
         
     def forward(self, batch):
-        positional_encoding_cov = cyclic_positional_encoding(
-            batch['minutes_covariates'], self.d_model
-        )
-        
-        positional_encoding_tgt = cyclic_positional_encoding(
-            batch['minutes_observations'], self.d_model
-        )
+
+        positional_encoding = baseline_positional_encoding(
+            batch['minutes_observations'], self.d_model)
 
         # Embedding inputs
-        embedded_cov = self.embedding_cov(batch['covariates']) + positional_encoding_cov 
-        embedded_tgt = self.embedding_tgt(batch['interpolated_target']) + positional_encoding_tgt
+        embedded_cov = self.embedding_cov(batch['covariates']) + positional_encoding 
+        embedded_cat = self.embedding_cat(torch.cat([batch['covariates'], batch['interpolated_target']], dim=-1)) + positional_encoding
+        embedded_tgt = self.embedding_tgt(batch['interpolated_target']) + positional_encoding
         
         # Target mask
         mask = batch['mask']
         inverted_mask = ~mask
 
-        # Transformer encoders
-        output_cov = self.transformer_enc(embedded_cov, src_key_padding_mask=batch['padded_observations'])
+        # Multihead attention
+        output_cov, _ = self.multihead_attention(
+            query=embedded_cov, key=embedded_cov, value=embedded_cov
+        )
+        output_cat, _ = self.multihead_attention(
+            query=embedded_cat, key=embedded_cat, value=embedded_cat
+        )
 
         # src_mask ensures that position i is allowed to attend the unmasked positions.
         # If a BoolTensor is provided, positions with True are not allowed to attend while False values will be unchanged
         if self.use_attention_mask:   
             attention_mask = inverted_mask.permute(0, 2, 1).repeat(1, inverted_mask.size(1), 1) # B, T, T
             attention_mask = attention_mask.repeat(self.n_head, 1, 1) # B*nhead, T, T
-            output_tgt = self.transformer_enc(embedded_tgt, mask=attention_mask, src_key_padding_mask=batch['padded_covariates'])
+            output_tgt, _ = self.multihead_attention(
+                query=embedded_tgt, key=embedded_tgt, value=embedded_tgt, 
+                attn_mask=attention_mask
+            )
         else:
-            output_tgt = self.transformer_enc(embedded_tgt, src_key_padding_mask=batch['padded_covariates'])
+            output_tgt, _ = self.multihead_attention(
+                query=embedded_tgt, key=embedded_tgt, value=embedded_tgt
+            )
 
         # Concatenate the outputs
-        concatenated_output = torch.cat([output_cov, output_tgt], dim=-1)
+        concatenated_output = torch.cat([output_cov, output_cat, output_tgt], dim=-1)
 
         # Feed forward
         output = self.feed_forward(concatenated_output)
@@ -120,7 +123,7 @@ class GapT(pl.LightningModule):
             optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
         else:
             raise ValueError(f'Invalid optimizer: {self.optimizer}')
-        
+
         # scheduler = LambdaLR(optimizer, self.lr_lambda)
 
         return {

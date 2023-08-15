@@ -1,26 +1,37 @@
-import os
+import h5py
 import torch
 import pandas as pd
 from torch.utils.data import Dataset
+from gapt.constants import gases, met, aerosols
 
 
 class GapFillingDataset(Dataset):
-    def __init__(self, directory, feature_list):
-        self.directories = [f.path for f in os.scandir(directory) if f.is_dir()]
+    def __init__(self, data_paths, feature_list):
         self.feature_list = feature_list
+        self.data_paths = data_paths
     
     def __len__(self):
-        return len(self.directories)
+        return len(self.data_paths)
     
     def __getitem__(self, idx):
-        directory = self.directories[idx]
+        file, key = self.data_paths[idx]
         
-        # Load observation and covariate data
-        observations = pd.read_csv(os.path.join(directory, 'observations.csv'), parse_dates=['date'])
-        covariates = pd.read_csv(os.path.join(directory, 'covariates.csv'), parse_dates=['date'])
+        # Load observation and covariate data from the HDF5 file
+        with h5py.File(file, 'r') as h5file:
+            observations = pd.DataFrame(h5file[key]['observations'])
+            covariates = pd.DataFrame(h5file[key]['covariates'])
+        
+        # Assign column names
+        observations.columns = ['date', 'interpolated_target', 'target', 'mask', 'padded']
+        covariates.columns = ['date', 'padded'] + self.feature_list
+
+        # Convert Unix timestamps to pandas datetime objects
+        observations['date'] = pd.to_datetime(observations['date'], unit='s')
+        covariates['date'] = pd.to_datetime(covariates['date'], unit='s')
 
         # Extract the features and the target
         features_covariates = covariates[self.feature_list].values
+        # features_covariates = covariates[gases + met + aerosols].values # Exclude lat, long
         interpolated_target = observations['interpolated_target'].values
         target = observations['target'].values
         mask = observations['mask'].values
