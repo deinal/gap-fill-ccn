@@ -31,6 +31,9 @@ if __name__ == '__main__':
     parser.add_argument('--num_workers', default=16, type=int)
     args = parser.parse_args()
 
+    for arg in vars(args):
+        print(f'{arg}: {getattr(args, arg)}')
+
     # Create the datasets
     with open(os.path.join(args.data_dir, 'paths.json'), 'r') as f:
         data_paths = json.load(f)

@@ -21,13 +21,20 @@ class GapT(pl.LightningModule):
         self.embedding_cov = nn.Linear(d_input, d_model)
         self.embedding_tgt = nn.Linear(d_output, d_model)
         
-        transformer_enc_layer = nn.TransformerEncoderLayer(
+        transformer_enc_layer_cov = nn.TransformerEncoderLayer(
             d_model=d_model, nhead=n_head, dim_feedforward=d_feedforward, 
             activation='gelu', batch_first=True
         )
+        self.transformer_enc_cov = nn.TransformerEncoder(
+            transformer_enc_layer_cov, num_layers=n_layers
+        )
 
-        self.transformer_enc = nn.TransformerEncoder(
-            transformer_enc_layer, num_layers=n_layers
+        transformer_enc_layer_tgt = nn.TransformerEncoderLayer(
+            d_model=d_model, nhead=n_head, dim_feedforward=d_feedforward, 
+            activation='gelu', batch_first=True
+        )
+        self.transformer_enc_tgt = nn.TransformerEncoder(
+            transformer_enc_layer_tgt, num_layers=n_layers
         )
 
         self.feed_forward = nn.Sequential(
@@ -51,24 +58,28 @@ class GapT(pl.LightningModule):
         )
 
         # Embedding inputs
-        embedded_cov = self.embedding_cov(batch['covariates']) + positional_encoding_cov 
-        embedded_tgt = self.embedding_tgt(batch['interpolated_target']) + positional_encoding_tgt
-        
+        embedded_cov = self.embedding_cov(batch['covariates']) + positional_encoding_cov
+        embedded_tgt = self.embedding_tgt(batch['avg_target']) + positional_encoding_tgt
+
+        # Set padding to zero
+        embedded_cov *= ~batch['padded_covariates']
+        embedded_tgt *= ~batch['padded_observations']
+
         # Target mask
         mask = batch['mask']
         inverted_mask = ~mask
 
         # Transformer encoders
-        output_cov = self.transformer_enc(embedded_cov, src_key_padding_mask=batch['padded_observations'])
+        output_cov = self.transformer_enc_cov(embedded_cov)
 
-        # src_mask ensures that position i is allowed to attend the unmasked positions.
+        # src_mask ensures that position i is allowed to attend the unmasked positions
         # If a BoolTensor is provided, positions with True are not allowed to attend while False values will be unchanged
-        if self.use_attention_mask:   
+        if self.use_attention_mask:
             attention_mask = inverted_mask.permute(0, 2, 1).repeat(1, inverted_mask.size(1), 1) # B, T, T
             attention_mask = attention_mask.repeat(self.n_head, 1, 1) # B*nhead, T, T
-            output_tgt = self.transformer_enc(embedded_tgt, mask=attention_mask, src_key_padding_mask=batch['padded_covariates'])
+            output_tgt = self.transformer_enc_tgt(embedded_tgt, mask=attention_mask)
         else:
-            output_tgt = self.transformer_enc(embedded_tgt, src_key_padding_mask=batch['padded_covariates'])
+            output_tgt = self.transformer_enc_tgt(embedded_tgt)
 
         # Concatenate the outputs
         concatenated_output = torch.cat([output_cov, output_tgt], dim=-1)
@@ -79,27 +90,41 @@ class GapT(pl.LightningModule):
 
         # Masking and output
         output = output * inverted_mask
-        output += batch['interpolated_target'] * mask
+        output += batch['avg_target'] * mask
         return output
 
     def training_step(self, batch, batch_idx):
         outputs = self.forward(batch)
-        loss = F.mse_loss(outputs, batch['target'])
-        # loss = quantile_loss(outputs, batch['target'], self.quantiles)
+        inverted_mask = ~batch['mask']
+        loss = F.mse_loss(outputs[inverted_mask], batch['target'][inverted_mask])
         self.log('train_loss', loss)
         return loss
 
     def validation_step(self, batch, batch_idx):
         outputs = self.forward(batch)
-        loss = F.mse_loss(outputs, batch['target'])
-        # loss = quantile_loss(outputs, batch['target'], self.quantiles)
+        inverted_mask = ~batch['mask']
+        loss = F.mse_loss(outputs[inverted_mask], batch['target'][inverted_mask])
         self.log('val_loss', loss)
 
     def test_step(self, batch, batch_idx, dataloader_idx):
         outputs = self.forward(batch)
-        loss = F.mse_loss(outputs, batch['target'])
-        # loss = quantile_loss(outputs, batch['target'], self.quantiles)
+        inverted_mask = ~batch['mask']
+
+        # Compute MSE loss for the gap
+        loss = F.mse_loss(outputs[inverted_mask], batch['target'][inverted_mask])
         self.log('test_loss', loss)
+
+        # Compute RMSE (Root Mean Squared Error)
+        rmse = torch.sqrt(loss)
+        self.log('test_rmse', rmse)
+
+        # Compute MAE (Mean Absolute Error)
+        mae = F.l1_loss(outputs[inverted_mask], batch['target'][inverted_mask])
+        self.log('test_mae', mae)
+
+        # Compute MBE (Mean Bias Error)
+        mbe = torch.mean(outputs[inverted_mask] - batch['target'][inverted_mask])
+        self.log('test_mbe', mbe)
     
     def lr_lambda(self, current_epoch):
         max_epochs = self.trainer.max_epochs

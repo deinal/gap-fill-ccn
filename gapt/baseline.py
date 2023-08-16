@@ -22,9 +22,9 @@ class Baseline(pl.LightningModule):
         self.embedding_cat = nn.Linear(d_input + d_output, d_model)
         self.embedding_tgt = nn.Linear(d_output, d_model)
         
-        self.multihead_attention = nn.MultiheadAttention(
-            embed_dim=d_model, num_heads=n_head, batch_first=True
-        )
+        self.multihead_attention_cov = nn.MultiheadAttention(embed_dim=d_model, num_heads=n_head, batch_first=True)
+        self.multihead_attention_cat = nn.MultiheadAttention(embed_dim=d_model, num_heads=n_head, batch_first=True)
+        self.multihead_attention_tgt = nn.MultiheadAttention(embed_dim=d_model, num_heads=n_head, batch_first=True)
 
         self.feed_forward = nn.Sequential(
             nn.Linear(3 * d_model, 128),
@@ -44,32 +44,31 @@ class Baseline(pl.LightningModule):
 
         # Embedding inputs
         embedded_cov = self.embedding_cov(batch['covariates']) + positional_encoding 
-        embedded_cat = self.embedding_cat(torch.cat([batch['covariates'], batch['interpolated_target']], dim=-1)) + positional_encoding
-        embedded_tgt = self.embedding_tgt(batch['interpolated_target']) + positional_encoding
+        embedded_cat = self.embedding_cat(torch.cat([batch['covariates'], batch['avg_target']], dim=-1)) + positional_encoding
+        embedded_tgt = self.embedding_tgt(batch['avg_target']) + positional_encoding
         
         # Target mask
         mask = batch['mask']
         inverted_mask = ~mask
 
         # Multihead attention
-        output_cov, _ = self.multihead_attention(
+        output_cov, _ = self.multihead_attention_cov(
             query=embedded_cov, key=embedded_cov, value=embedded_cov
         )
-        output_cat, _ = self.multihead_attention(
+        output_cat, _ = self.multihead_attention_cat(
             query=embedded_cat, key=embedded_cat, value=embedded_cat
         )
-
         # src_mask ensures that position i is allowed to attend the unmasked positions.
         # If a BoolTensor is provided, positions with True are not allowed to attend while False values will be unchanged
-        if self.use_attention_mask:   
+        if self.use_attention_mask:
             attention_mask = inverted_mask.permute(0, 2, 1).repeat(1, inverted_mask.size(1), 1) # B, T, T
             attention_mask = attention_mask.repeat(self.n_head, 1, 1) # B*nhead, T, T
-            output_tgt, _ = self.multihead_attention(
+            output_tgt, _ = self.multihead_attention_tgt(
                 query=embedded_tgt, key=embedded_tgt, value=embedded_tgt, 
                 attn_mask=attention_mask
             )
         else:
-            output_tgt, _ = self.multihead_attention(
+            output_tgt, _ = self.multihead_attention_tgt(
                 query=embedded_tgt, key=embedded_tgt, value=embedded_tgt
             )
 
@@ -82,27 +81,41 @@ class Baseline(pl.LightningModule):
 
         # Masking and output
         output = output * inverted_mask
-        output += batch['interpolated_target'] * mask
+        output += batch['avg_target'] * mask
         return output
 
     def training_step(self, batch, batch_idx):
         outputs = self.forward(batch)
-        loss = F.mse_loss(outputs, batch['target'])
-        # loss = quantile_loss(outputs, batch['target'], self.quantiles)
+        inverted_mask = ~batch['mask']
+        loss = F.mse_loss(outputs[inverted_mask], batch['target'][inverted_mask])
         self.log('train_loss', loss)
         return loss
 
     def validation_step(self, batch, batch_idx):
         outputs = self.forward(batch)
-        loss = F.mse_loss(outputs, batch['target'])
-        # loss = quantile_loss(outputs, batch['target'], self.quantiles)
+        inverted_mask = ~batch['mask']
+        loss = F.mse_loss(outputs[inverted_mask], batch['target'][inverted_mask])
         self.log('val_loss', loss)
 
     def test_step(self, batch, batch_idx, dataloader_idx):
         outputs = self.forward(batch)
-        loss = F.mse_loss(outputs, batch['target'])
-        # loss = quantile_loss(outputs, batch['target'], self.quantiles)
+        inverted_mask = ~batch['mask']
+
+        # Compute MSE loss for the gap
+        loss = F.mse_loss(outputs[inverted_mask], batch['target'][inverted_mask])
         self.log('test_loss', loss)
+
+        # Compute RMSE (Root Mean Squared Error)
+        rmse = torch.sqrt(loss)
+        self.log('test_rmse', rmse)
+
+        # Compute MAE (Mean Absolute Error)
+        mae = F.l1_loss(outputs[inverted_mask], batch['target'][inverted_mask])
+        self.log('test_mae', mae)
+
+        # Compute MBE (Mean Bias Error)
+        mbe = torch.mean(outputs[inverted_mask] - batch['target'][inverted_mask])
+        self.log('test_mbe', mbe)
     
     def lr_lambda(self, current_epoch):
         max_epochs = self.trainer.max_epochs
