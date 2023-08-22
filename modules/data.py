@@ -2,7 +2,6 @@ import h5py
 import torch
 import pandas as pd
 from torch.utils.data import Dataset
-from gapt.constants import gases, met, aerosols
 
 
 class GapFillingDataset(Dataset):
@@ -23,8 +22,8 @@ class GapFillingDataset(Dataset):
             unix_date = h5file[key]['observations'][:,0]
 
         # Assign column names
-        observations.columns = ['date', 'avg_target', 'target', 'mask', 'padded']
-        covariates.columns = ['date', 'padded'] + self.feature_list
+        observations.columns = ['date', 'avg_target', 'target', 'mask']
+        covariates.columns = ['date'] + self.feature_list
 
         # Convert Unix timestamps to pandas datetime objects
         observations['date'] = pd.to_datetime(observations['date'], unit='s')
@@ -35,30 +34,21 @@ class GapFillingDataset(Dataset):
         avg_target = observations['avg_target'].values
         target = observations['target'].values
         mask = observations['mask'].values
-        minutes_observations = observations['date'].dt.hour * 60 + observations['date'].dt.minute.values
-        minutes_covariates = covariates['date'].dt.hour * 60 + covariates['date'].dt.minute.values
-        padded_observations = observations['padded'].values
-        padded_covariates = covariates['padded'].values
+        minutes = observations['date'].dt.hour * 60 + observations['date'].dt.minute.values
 
         # Convert to tensors
         cov_features = torch.tensor(cov_features, dtype=torch.float32)
         avg_target = torch.tensor(avg_target, dtype=torch.float32).unsqueeze(-1)
         target = torch.tensor(target, dtype=torch.float32).unsqueeze(-1)
         mask = torch.tensor(mask, dtype=torch.bool).unsqueeze(-1)
-        minutes_observations = torch.tensor(minutes_observations, dtype=torch.float32).unsqueeze(-1)
-        minutes_covariates = torch.tensor(minutes_covariates, dtype=torch.float32).unsqueeze(-1)
-        padded_observations = torch.tensor(padded_observations, dtype=torch.bool).unsqueeze(-1)
-        padded_covariates = torch.tensor(padded_covariates, dtype=torch.bool).unsqueeze(-1)
+        minutes = torch.tensor(minutes, dtype=torch.float32).unsqueeze(-1)
 
         return {
             'covariates': cov_features, 
             'avg_target': avg_target,
             'target': target, 
             'mask': mask, 
-            'minutes_observations': minutes_observations, 
-            'minutes_covariates': minutes_covariates, 
-            'padded_observations': padded_observations, 
-            'padded_covariates': padded_covariates,
+            'minutes': minutes,
             'unix_date': unix_date,
             'file': file,
             'key': key,

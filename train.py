@@ -4,10 +4,10 @@ import torch
 import argparse
 import pytorch_lightning as pl
 from torch.utils.data import DataLoader
-from gapt.constants import feature_list
-from gapt.data import GapFillingDataset
-from gapt.model import GapT
-from gapt.baseline import Baseline
+from modules.constants import feature_list
+from modules.data import GapFillingDataset
+from modules.gapt import GapT
+from modules.baseline import Baseline
 
 
 if __name__ == '__main__':
@@ -15,14 +15,15 @@ if __name__ == '__main__':
     parser.add_argument('--d_output', type=int, default=1)
     parser.add_argument('--n_head', type=int, default=4)
     parser.add_argument('--d_model', type=int, default=64)
+    parser.add_argument('--d_embedding', type=int, default=64)
     parser.add_argument('--n_layers', type=int, default=4)
     parser.add_argument('--d_feedforward', type=int, default=128)
     parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--learning_rate', type=float, default=1e-4)
     parser.add_argument('--dropout_rate', type=float, default=0.0)
-    parser.add_argument('--use_attention_mask', action='store_true', default=False)
     parser.add_argument('--optimizer', type=str, default='momo', choices=['momo', 'adam'])
-    parser.add_argument('--model', type=str, default='gapt', choices=['gapt', 'baseline'])
+    parser.add_argument('--model', type=str, default='gapt', choices=['gapt', 'gapt_cat', 'baseline'])
+    parser.add_argument('--mode', type=str, default='default', choices=['default', 'naive', 'shared', 'separate'])
     parser.add_argument('--epochs', type=int, default=1)
     parser.add_argument('--data_splits', default=[0.8, 0.1, 0.1], nargs=3, type=float)
     parser.add_argument('--data_dir', type=str)
@@ -61,18 +62,17 @@ if __name__ == '__main__':
             learning_rate=args.learning_rate,
             dropout_rate=args.dropout_rate,
             optimizer=args.optimizer,
-            use_attention_mask=args.use_attention_mask,
+            mode=args.mode,
         )
     elif args.model == 'baseline':
         model = Baseline(
             d_input=d_input,
+            d_embedding=args.d_embedding,
             d_model=args.d_model,
-            n_head=args.n_head,
             d_output=args.d_output,
             learning_rate=args.learning_rate,
             dropout_rate=args.dropout_rate,
             optimizer=args.optimizer,
-            use_attention_mask=args.use_attention_mask
         )
     else:
         raise ValueError(f'Invalid model type: {args.model}')
@@ -100,6 +100,7 @@ if __name__ == '__main__':
         'args': vars(args),
         'feature_list': feature_list,
         'loss_values': results,
+        'params': sum(p.numel() for p in model.parameters() if p.requires_grad),
     }
 
     with open(os.path.join(args.output_dir, 'metadata.json'), 'w') as f:

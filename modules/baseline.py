@@ -3,28 +3,26 @@ import torch.nn as nn
 import pytorch_lightning as pl
 import torch.nn.functional as F
 from torch.optim.lr_scheduler import LambdaLR
-from gapt.utils import baseline_positional_encoding
+from modules.utils import baseline_positional_encoding
+from modules.layers import ScaledDotProductAttention
 from momo import Momo
 
 
 class Baseline(pl.LightningModule):
-    def __init__(self, d_input, d_model, n_head, d_output, 
-                 learning_rate, dropout_rate, optimizer, use_attention_mask):
+    def __init__(self, d_input, d_embedding, d_model, d_output, 
+                 learning_rate, dropout_rate, optimizer):
         super().__init__()
-        
-        self.d_model = d_model
-        self.n_head = n_head
+        self.d_embedding = d_embedding
         self.learning_rate = learning_rate
         self.optimizer = optimizer
-        self.use_attention_mask = use_attention_mask
 
-        self.embedding_cov = nn.Linear(d_input, d_model)
-        self.embedding_cat = nn.Linear(d_input + d_output, d_model)
-        self.embedding_tgt = nn.Linear(d_output, d_model)
+        self.embedding_cov = nn.Linear(d_input, d_embedding)
+        self.embedding_cat = nn.Linear(d_input + d_output, d_embedding)
+        self.embedding_tgt = nn.Linear(d_output, d_embedding)
         
-        self.multihead_attention_cov = nn.MultiheadAttention(embed_dim=d_model, num_heads=n_head, batch_first=True)
-        self.multihead_attention_cat = nn.MultiheadAttention(embed_dim=d_model, num_heads=n_head, batch_first=True)
-        self.multihead_attention_tgt = nn.MultiheadAttention(embed_dim=d_model, num_heads=n_head, batch_first=True)
+        self.attention_cov = ScaledDotProductAttention(d_embedding, d_model)
+        self.attention_cat = ScaledDotProductAttention(d_embedding, d_model)
+        self.attention_tgt = ScaledDotProductAttention(d_embedding, d_model)
 
         self.feed_forward = nn.Sequential(
             nn.Linear(3 * d_model, 128),
@@ -38,39 +36,17 @@ class Baseline(pl.LightningModule):
         self.head = nn.Linear(32, d_output)
         
     def forward(self, batch):
-
-        positional_encoding = baseline_positional_encoding(
-            batch['minutes_observations'], self.d_model)
+        positional_encoding = baseline_positional_encoding(batch['minutes'], self.d_embedding)
 
         # Embedding inputs
         embedded_cov = self.embedding_cov(batch['covariates']) + positional_encoding 
         embedded_cat = self.embedding_cat(torch.cat([batch['covariates'], batch['avg_target']], dim=-1)) + positional_encoding
         embedded_tgt = self.embedding_tgt(batch['avg_target']) + positional_encoding
         
-        # Target mask
-        mask = batch['mask']
-        inverted_mask = ~mask
-
-        # Multihead attention
-        output_cov, _ = self.multihead_attention_cov(
-            query=embedded_cov, key=embedded_cov, value=embedded_cov
-        )
-        output_cat, _ = self.multihead_attention_cat(
-            query=embedded_cat, key=embedded_cat, value=embedded_cat
-        )
-        # src_mask ensures that position i is allowed to attend the unmasked positions.
-        # If a BoolTensor is provided, positions with True are not allowed to attend while False values will be unchanged
-        if self.use_attention_mask:
-            attention_mask = inverted_mask.permute(0, 2, 1).repeat(1, inverted_mask.size(1), 1) # B, T, T
-            attention_mask = attention_mask.repeat(self.n_head, 1, 1) # B*nhead, T, T
-            output_tgt, _ = self.multihead_attention_tgt(
-                query=embedded_tgt, key=embedded_tgt, value=embedded_tgt, 
-                attn_mask=attention_mask
-            )
-        else:
-            output_tgt, _ = self.multihead_attention_tgt(
-                query=embedded_tgt, key=embedded_tgt, value=embedded_tgt
-            )
+        # Scaled Dot Product Attention
+        output_cov = self.attention_cov(query=embedded_cov, key=embedded_cov, value=embedded_cov)
+        output_cat = self.attention_cat(query=embedded_cat, key=embedded_cat, value=embedded_cat)
+        output_tgt = self.attention_tgt(query=embedded_tgt, key=embedded_tgt, value=embedded_tgt)
 
         # Concatenate the outputs
         concatenated_output = torch.cat([output_cov, output_cat, output_tgt], dim=-1)
@@ -80,8 +56,8 @@ class Baseline(pl.LightningModule):
         output = self.head(output)
 
         # Masking and output
-        output = output * inverted_mask
-        output += batch['avg_target'] * mask
+        output = output * ~batch['mask']
+        output += batch['avg_target'] * batch['mask']
         return output
 
     def training_step(self, batch, batch_idx):
@@ -101,21 +77,26 @@ class Baseline(pl.LightningModule):
         outputs = self.forward(batch)
         inverted_mask = ~batch['mask']
 
-        # Compute MSE loss for the gap
-        loss = F.mse_loss(outputs[inverted_mask], batch['target'][inverted_mask])
-        self.log('test_loss', loss)
+        prediction, target = outputs[inverted_mask], batch['target'][inverted_mask]
+        exp_prediction, exp_target = torch.exp(prediction), torch.exp(target)
 
-        # Compute RMSE (Root Mean Squared Error)
+        loss = F.mse_loss(prediction, target)
+        self.log('test_loss', loss)
         rmse = torch.sqrt(loss)
         self.log('test_rmse', rmse)
-
-        # Compute MAE (Mean Absolute Error)
-        mae = F.l1_loss(outputs[inverted_mask], batch['target'][inverted_mask])
+        mae = F.l1_loss(prediction, target)
         self.log('test_mae', mae)
-
-        # Compute MBE (Mean Bias Error)
-        mbe = torch.mean(outputs[inverted_mask] - batch['target'][inverted_mask])
+        mbe = torch.mean(prediction - target)
         self.log('test_mbe', mbe)
+
+        exp_loss = F.mse_loss(exp_prediction, exp_target)
+        self.log('test_exp_loss', exp_loss)
+        exp_rmse = torch.sqrt(exp_loss)
+        self.log('test_exp_rmse', exp_rmse)
+        exp_mae = F.l1_loss(exp_prediction, exp_target)
+        self.log('test_exp_mae', exp_mae)
+        exp_mbe = torch.mean(exp_prediction - exp_target)
+        self.log('test_exp_mbe', exp_mbe)
     
     def lr_lambda(self, current_epoch):
         max_epochs = self.trainer.max_epochs
