@@ -1,3 +1,3 @@
 # gap-fill-ccn
 
-<img src="figures/gapt.png" width="600">
+<img src="figures/gapt.png" width="800">

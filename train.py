@@ -8,6 +8,7 @@ from modules.constants import feature_list
 from modules.data import GapFillingDataset
 from modules.gapt import GapT
 from modules.baseline import Baseline
+from modules.mlp import MLP
 
 
 if __name__ == '__main__':
@@ -16,14 +17,14 @@ if __name__ == '__main__':
     parser.add_argument('--n_head', type=int, default=4)
     parser.add_argument('--d_model', type=int, default=64)
     parser.add_argument('--d_embedding', type=int, default=64)
-    parser.add_argument('--n_layers', type=int, default=4)
+    parser.add_argument('--n_layers', type=int, default=2)
     parser.add_argument('--d_feedforward', type=int, default=128)
     parser.add_argument('--batch_size', type=int, default=32)
-    parser.add_argument('--learning_rate', type=float, default=1e-4)
+    parser.add_argument('--learning_rate', type=float, default=0.1)
     parser.add_argument('--dropout_rate', type=float, default=0.0)
     parser.add_argument('--optimizer', type=str, default='momo', choices=['momo', 'adam'])
-    parser.add_argument('--model', type=str, default='gapt', choices=['gapt', 'gapt_cat', 'baseline'])
-    parser.add_argument('--mode', type=str, default='default', choices=['default', 'naive', 'shared', 'separate'])
+    parser.add_argument('--model', type=str, default='gapt', choices=['gapt', 'baseline', 'mlp'])
+    parser.add_argument('--mode', type=str, default='default', choices=['default', 'naive'])
     parser.add_argument('--epochs', type=int, default=1)
     parser.add_argument('--data_splits', default=[0.8, 0.1, 0.1], nargs=3, type=float)
     parser.add_argument('--data_dir', type=str)
@@ -36,12 +37,12 @@ if __name__ == '__main__':
         print(f'{arg}: {getattr(args, arg)}')
 
     # Create the datasets
-    with open(os.path.join(args.data_dir, 'paths.json'), 'r') as f:
-        data_paths = json.load(f)
+    with open(os.path.join(args.data_dir, 'metadata.json'), 'r') as f:
+        dataset_metadata = json.load(f)
     
-    train_dataset = GapFillingDataset(data_paths['train'], feature_list)
-    val_dataset = GapFillingDataset(data_paths['val'], feature_list)
-    test_dataset = GapFillingDataset(data_paths['test'], feature_list)
+    train_dataset = GapFillingDataset(dataset_metadata['train_paths'], feature_list)
+    val_dataset = GapFillingDataset(dataset_metadata['val_paths'], feature_list)
+    test_dataset = GapFillingDataset(dataset_metadata['test_paths'], feature_list)
 
     # Create the dataloaders
     train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
@@ -50,6 +51,7 @@ if __name__ == '__main__':
 
     # Initialize the model
     d_input = len(feature_list)
+    scaler_params = dataset_metadata['scaler_params']
 
     if args.model == 'gapt':
         model = GapT(
@@ -63,6 +65,7 @@ if __name__ == '__main__':
             dropout_rate=args.dropout_rate,
             optimizer=args.optimizer,
             mode=args.mode,
+            scaler_params=scaler_params,
         )
     elif args.model == 'baseline':
         model = Baseline(
@@ -73,6 +76,16 @@ if __name__ == '__main__':
             learning_rate=args.learning_rate,
             dropout_rate=args.dropout_rate,
             optimizer=args.optimizer,
+            scaler_params=scaler_params,
+        )
+    elif args.model == 'mlp':
+        model = MLP(
+            d_input=d_input,
+            d_output=args.d_output,
+            learning_rate=args.learning_rate,
+            dropout_rate=args.dropout_rate,
+            optimizer=args.optimizer,
+            scaler_params=scaler_params,
         )
     else:
         raise ValueError(f'Invalid model type: {args.model}')

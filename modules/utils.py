@@ -17,10 +17,3 @@ def baseline_positional_encoding(t, dim):
     pe[:, :, 0::2] = torch.sin(t * div_term)
     pe[:, :, 1::2] = torch.cos(t * div_term)
     return pe
-
-def scaled_dot_product_attention(self, query, key, value):
-    matmul_qk = torch.matmul(query, key.transpose(-2, -1))
-    scaled_attention_logits = matmul_qk / self.scale
-    attention_weights = torch.nn.functional.softmax(scaled_attention_logits, dim=-1)
-    output = torch.matmul(attention_weights, value)
-    return output
