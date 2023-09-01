@@ -8,12 +8,12 @@ from momo import Momo
 
 class MLP(pl.LightningModule):
     def __init__(self, d_input, d_output, learning_rate,
-                 dropout_rate, optimizer, scaler_params=None):
+                 dropout_rate, optimizer, log_scaled=True):
         super(MLP, self).__init__()
 
         self.learning_rate = learning_rate
         self.optimizer = optimizer
-        self.scaler_params = scaler_params
+        self.log_scaled = log_scaled
 
         # Define the MLP structure
         self.layers = nn.Sequential(
@@ -76,11 +76,6 @@ class MLP(pl.LightningModule):
         loss = F.mse_loss(outputs[inverted_mask], batch['target'][inverted_mask])
         self.log('val_loss', loss)
 
-    def inverse_transform(self, tensor, feature):
-        mean = self.scaler_params[feature]['mean']
-        std = self.scaler_params[feature]['std']
-        return tensor * std + mean
-
     def test_step(self, batch, batch_idx, dataloader_idx):
         outputs = self.forward(batch)
         inverted_mask = ~batch['mask']
@@ -97,18 +92,19 @@ class MLP(pl.LightningModule):
         mbe = torch.mean(prediction - target)
         self.log('test_mbe', mbe)
 
-        # Invert standard scaling
-        prediction_original = self.inverse_transform(prediction, 'target')
-        target_original = self.inverse_transform(target, 'target')
-
-        loss = F.mse_loss(prediction_original, target_original)
-        self.log('test_loss_original', loss)
-        rmse = torch.sqrt(loss)
-        self.log('test_rmse_original', rmse)
-        mae = F.l1_loss(prediction_original, target_original)
-        self.log('test_mae_original', mae)
-        mbe = torch.mean(prediction_original - target_original)
-        self.log('test_mbe_original', mbe)
+        if self.log_scaled:
+            # Revert log scaling
+            exp_prediction = torch.exp(prediction)
+            exp_target = torch.exp(target)
+            
+            exp_loss = F.mse_loss(exp_prediction, exp_target)
+            self.log('test_loss_original', exp_loss)
+            exp_rmse = torch.sqrt(exp_loss)
+            self.log('test_rmse_original', exp_rmse)
+            exp_mae = F.l1_loss(exp_prediction, exp_target)
+            self.log('test_mae_original', exp_mae)
+            exp_mbe = torch.mean(exp_prediction - exp_target)
+            self.log('test_mbe_original', exp_mbe)
     
     def lr_lambda(self, current_epoch):
         max_epochs = self.trainer.max_epochs

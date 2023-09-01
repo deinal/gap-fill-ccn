@@ -37,12 +37,12 @@ if __name__ == '__main__':
         print(f'{arg}: {getattr(args, arg)}')
 
     # Create the datasets
-    with open(os.path.join(args.data_dir, 'metadata.json'), 'r') as f:
-        dataset_metadata = json.load(f)
+    with open(os.path.join(args.data_dir, 'paths.json'), 'r') as f:
+        data_paths = json.load(f)
     
-    train_dataset = GapFillingDataset(dataset_metadata['train_paths'], feature_list)
-    val_dataset = GapFillingDataset(dataset_metadata['val_paths'], feature_list)
-    test_dataset = GapFillingDataset(dataset_metadata['test_paths'], feature_list)
+    train_dataset = GapFillingDataset(data_paths['train'], feature_list)
+    val_dataset = GapFillingDataset(data_paths['val'], feature_list)
+    test_dataset = GapFillingDataset(data_paths['test'], feature_list)
 
     # Create the dataloaders
     train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
@@ -51,8 +51,7 @@ if __name__ == '__main__':
 
     # Initialize the model
     d_input = len(feature_list)
-    scaler_params = dataset_metadata['scaler_params']
-
+    
     if args.model == 'gapt':
         model = GapT(
             d_input=d_input,
@@ -65,7 +64,6 @@ if __name__ == '__main__':
             dropout_rate=args.dropout_rate,
             optimizer=args.optimizer,
             mode=args.mode,
-            scaler_params=scaler_params,
         )
     elif args.model == 'baseline':
         model = Baseline(
@@ -76,7 +74,6 @@ if __name__ == '__main__':
             learning_rate=args.learning_rate,
             dropout_rate=args.dropout_rate,
             optimizer=args.optimizer,
-            scaler_params=scaler_params,
         )
     elif args.model == 'mlp':
         model = MLP(
@@ -85,7 +82,6 @@ if __name__ == '__main__':
             learning_rate=args.learning_rate,
             dropout_rate=args.dropout_rate,
             optimizer=args.optimizer,
-            scaler_params=scaler_params,
         )
     else:
         raise ValueError(f'Invalid model type: {args.model}')
