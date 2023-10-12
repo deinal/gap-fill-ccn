@@ -1,7 +1,8 @@
 
-stations = ['SGP', 'EGB', 'AMA', 'SAO', 'HRW', 'VIE', 'BSL', 'WAL', 'POV', 'MLP', 'ABZ',
-            'ABZ', 'NEU', 'VHL', 'KCE', 'ASP', 'KPZ', 'PRL', 'HYY', 'HEL', 'VAR', 'BOT',
-            'MAR', 'AMM', 'HAD', 'UAE', 'DEL', 'MUK', 'ZOT', 'BEI', 'NAN']
+stations = ['ABZ', 'AMM', 'ASP', 'BEI', 'BOT', 'BSL', 'EGB', 'FKL', 'HAD', 
+            'HEL', 'HPB', 'HYY', 'KCE', 'KPZ', 'MAR', 'MHD', 'MLP', 'MUK',
+            'NAN', 'NEU', 'POV', 'SAO', 'SCH', 'SGP', 'UAE', 'PRL',
+            'VAR', 'VHL', 'VIE', 'WAL', 'ZOT']
 
 aerosols = ['aermr01', 'aermr02', 'aermr03', 'aermr04', 'aermr05', 'aermr06', 
             'aermr07', 'aermr08', 'aermr09', 'aermr10', 'aermr11']
@@ -12,6 +13,6 @@ met = ['d2m', 't2m', 'blh', 'rh', 'wind_speed', 'crwc']
         
 loc = ['latitude', 'longitude', 'altitude']
 
-env_types = ['env_type_coastal', 'env_type_remote', 'env_type_rural', 'env_type_rural_regional_background', 'env_type_urban', 'env_type_urban_background']
+env_types = ['env_type_urban', 'env_type_urban_background', 'env_type_rural', 'env_type_rural_background', 'env_type_remote']
 
 feature_list = gases + met + aerosols + loc + env_types

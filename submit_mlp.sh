@@ -21,5 +21,5 @@ python train.py \
   --dropout_rate 0.2 \
   --optimizer momo \
   --model mlp \
-  --data_dir data_four_week_seq \
+  --data_dir data/four_week_seq \
   --output_dir results/mlp_four_week_seq

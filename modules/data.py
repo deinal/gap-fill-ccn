@@ -15,36 +15,36 @@ class GapFillingDataset(Dataset):
     def __getitem__(self, idx):
         file, key = self.data_paths[idx]
         
-        # Load observation and covariate data from the HDF5 file
+        # Load target and covariate data from the HDF5 file
         with h5py.File(file, 'r') as h5file:
-            observations = pd.DataFrame(h5file[key]['observations'])
-            covariates = pd.DataFrame(h5file[key]['covariates'])
-            unix_date = h5file[key]['observations'][:,0]
+            target_data = pd.DataFrame(h5file[key]['target'])
+            covariate_data = pd.DataFrame(h5file[key]['covariates'])
+            unix_date = h5file[key]['target'][:,0]
 
         # Assign column names
-        observations.columns = ['date', 'avg_target', 'target', 'mask']
-        covariates.columns = ['date'] + self.feature_list
+        target_data.columns = ['date', 'avg_target', 'target', 'mask']
+        covariate_data.columns = ['date'] + self.feature_list
 
         # Convert Unix timestamps to pandas datetime objects
-        observations['date'] = pd.to_datetime(observations['date'], unit='s')
-        covariates['date'] = pd.to_datetime(covariates['date'], unit='s')
+        target_data['date'] = pd.to_datetime(target_data['date'], unit='s')
+        covariate_data['date'] = pd.to_datetime(covariate_data['date'], unit='s')
 
         # Extract the features and the target
-        cov_features = covariates[self.feature_list].values
-        avg_target = observations['avg_target'].values
-        target = observations['target'].values
-        mask = observations['mask'].values
-        minutes = observations['date'].dt.hour * 60 + observations['date'].dt.minute.values
+        covariates = covariate_data[self.feature_list].values
+        avg_target = target_data['avg_target'].values
+        target = target_data['target'].values
+        mask = target_data['mask'].values
+        minutes = target_data['date'].dt.hour * 60 + target_data['date'].dt.minute.values
 
         # Convert to tensors
-        cov_features = torch.tensor(cov_features, dtype=torch.float32)
+        covariates = torch.tensor(covariates, dtype=torch.float32)
         avg_target = torch.tensor(avg_target, dtype=torch.float32).unsqueeze(-1)
         target = torch.tensor(target, dtype=torch.float32).unsqueeze(-1)
         mask = torch.tensor(mask, dtype=torch.bool).unsqueeze(-1)
         minutes = torch.tensor(minutes, dtype=torch.float32).unsqueeze(-1)
 
         return {
-            'covariates': cov_features, 
+            'covariates': covariates, 
             'avg_target': avg_target,
             'target': target, 
             'mask': mask, 

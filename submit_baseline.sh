@@ -23,5 +23,5 @@ python train.py \
   --dropout_rate 0.2 \
   --optimizer momo \
   --model baseline \
-  --data_dir data_four_week_seq \
+  --data_dir data/four_week_seq \
   --output_dir results/baseline_four_week_seq

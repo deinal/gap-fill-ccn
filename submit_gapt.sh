@@ -26,5 +26,5 @@ python train.py \
   --optimizer momo \
   --model gapt \
   --mode default \
-  --data_dir data_four_week_seq \
+  --data_dir data/four_week_seq \
   --output_dir results/gapt_default_four_week_seq
