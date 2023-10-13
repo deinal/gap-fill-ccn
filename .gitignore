@@ -3,3 +3,5 @@ lightning_logs/
 __pycache__/
 .ipynb_checkpoints/
 /slurm
+/figures/two_week
+/figures/four_week
