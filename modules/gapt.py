@@ -21,7 +21,7 @@ class GapT(pl.LightningModule):
             self.d_embedding = d_model // 2
             self.embedding_cov = nn.Linear(d_input, self.d_embedding)
             self.embedding_tgt = nn.Linear(d_output, self.d_embedding)
-        elif self.mode == 'naive':
+        elif mode == 'naive':
             self.d_embedding = d_model
             self.embedding = nn.Linear(d_input + d_output, self.d_embedding)
         else:
@@ -29,7 +29,7 @@ class GapT(pl.LightningModule):
         
         transformer_enc_layer = nn.TransformerEncoderLayer(
             d_model=d_model, nhead=n_head, dim_feedforward=d_feedforward, 
-            activation='gelu', batch_first=True
+            dropout=dropout_rate, activation='gelu', batch_first=True
         )
         self.transformer_enc = nn.TransformerEncoder(transformer_enc_layer, num_layers=n_layers)
 

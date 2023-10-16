@@ -2,7 +2,7 @@
 #SBATCH --account=project_2007839
 #SBATCH --ntasks=1
 #SBATCH --partition=gpu
-#SBATCH --time=04:20:00
+#SBATCH --time=04:00:00
 #SBATCH --cpus-per-task=32
 #SBATCH --mem-per-cpu=512M
 #SBATCH --gres=gpu:v100:1
