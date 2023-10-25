@@ -8,6 +8,7 @@ from modules.constants import feature_list
 from modules.data import GapFillingDataset
 from modules.gapt import GapT
 from modules.baseline import Baseline
+from modules.rnn import RNN
 from modules.mlp import MLP
 
 
@@ -23,7 +24,7 @@ if __name__ == '__main__':
     parser.add_argument('--learning_rate', type=float, default=0.1)
     parser.add_argument('--dropout_rate', type=float, default=0.0)
     parser.add_argument('--optimizer', type=str, default='momo', choices=['momo', 'adam'])
-    parser.add_argument('--model', type=str, default='gapt', choices=['gapt', 'baseline', 'mlp'])
+    parser.add_argument('--model', type=str, default='gapt', choices=['gapt', 'baseline', 'gru', 'lstm', 'mlp'])
     parser.add_argument('--mode', type=str, default='default', choices=['default', 'naive'])
     parser.add_argument('--epochs', type=int, default=1)
     parser.add_argument('--data_splits', default=[0.8, 0.1, 0.1], nargs=3, type=float)
@@ -70,6 +71,17 @@ if __name__ == '__main__':
             d_input=d_input,
             d_embedding=args.d_embedding,
             d_model=args.d_model,
+            d_output=args.d_output,
+            learning_rate=args.learning_rate,
+            dropout_rate=args.dropout_rate,
+            optimizer=args.optimizer,
+        )
+    elif args.model == 'gru' or args.model == 'lstm':
+        model = RNN(
+            net=args.model,
+            d_input=d_input,
+            d_model=args.d_model,
+            n_layers=args.n_layers,
             d_output=args.d_output,
             learning_rate=args.learning_rate,
             dropout_rate=args.dropout_rate,

@@ -3,38 +3,39 @@ import torch.nn as nn
 import pytorch_lightning as pl
 import torch.nn.functional as F
 from torch.optim.lr_scheduler import LambdaLR
-from modules.utils import cyclic_positional_encoding
 from momo import Momo
 
-class GapT(pl.LightningModule):
-    def __init__(self, d_input, d_model, n_head, d_feedforward, n_layers, d_output, 
-                 learning_rate, dropout_rate, optimizer, mode, log_scaled=True):
-        super().__init__()
+
+class RNN(pl.LightningModule):
+    def __init__(self, net, d_input, d_model, n_layers, d_output,
+                 learning_rate, dropout_rate, optimizer, log_scaled=True):
+        super(RNN, self).__init__()
 
         self.learning_rate = learning_rate
         self.optimizer = optimizer
-        self.mode = mode
         self.log_scaled = log_scaled
-        
-        if mode == 'default':
-            assert d_model % 2 == 0, 'd_model should be even'
-            self.d_embedding = d_model // 2
-            self.embedding_cov = nn.Linear(d_input, self.d_embedding)
-            self.embedding_tgt = nn.Linear(d_output, self.d_embedding)
-        elif mode == 'naive':
-            self.d_embedding = d_model
-            self.embedding = nn.Linear(d_input + d_output, self.d_embedding)
+
+        if net == 'lstm':
+            self.rnn = nn.LSTM(
+                input_size=d_input + d_output, 
+                hidden_size=d_model,
+                num_layers=n_layers,
+                batch_first=True,
+                bidirectional=True,
+            )
+        elif net == 'gru':
+            self.rnn = nn.GRU(
+                input_size=d_input + d_output,
+                hidden_size=d_model,
+                num_layers=n_layers,
+                batch_first=True,
+                bidirectional=True,
+            )
         else:
-            raise ValueError('Invalid mode')
-        
-        transformer_enc_layer = nn.TransformerEncoderLayer(
-            d_model=d_model, nhead=n_head, dim_feedforward=d_feedforward, 
-            dropout=0, activation='gelu', batch_first=True
-        )
-        self.transformer_enc = nn.TransformerEncoder(transformer_enc_layer, num_layers=n_layers)
+            raise ValueError('Invalid net')
 
         self.feed_forward = nn.Sequential(
-            nn.Linear(d_model, 128),
+            nn.Linear(2*d_model, 128),
             nn.GELU(),
             nn.Dropout(dropout_rate),
             nn.Linear(128, 32),
@@ -45,24 +46,11 @@ class GapT(pl.LightningModule):
         self.head = nn.Linear(32, d_output)
 
     def forward(self, batch):
-        positional_encoding = cyclic_positional_encoding(batch['minutes'], self.d_embedding)
+        # Concatenate covariates and target
+        x = torch.cat([batch['covariates'], batch['avg_target']], dim=-1)
 
-        if self.mode == 'default':
-            # Embed covariates and target separately
-            embedded_cov = self.embedding_cov(batch['covariates']) + positional_encoding
-            embedded_tgt = self.embedding_tgt(batch['avg_target']) + positional_encoding
-            # Concatenate the embeddings
-            embedding = torch.cat([embedded_cov, embedded_tgt], dim=-1)
-        elif self.mode == 'naive':
-            # Concatenate covariates and target
-            inputs = torch.cat([batch['covariates'], batch['avg_target']], dim=-1)
-            # Embed inputs 
-            embedding = self.embedding(inputs) + positional_encoding
-        else:
-            raise ValueError('Invalid mode')
-        
-        # Apply transformer encoder
-        output = self.transformer_enc(embedding)
+        # Pass through bidirectional rnn
+        output, _ = self.rnn(x)
 
         # Feed forward
         output = self.feed_forward(output)
@@ -136,7 +124,7 @@ class GapT(pl.LightningModule):
             optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
         else:
             raise ValueError(f'Invalid optimizer: {self.optimizer}')
-        
+
         # scheduler = LambdaLR(optimizer, self.lr_lambda)
 
         return {
