@@ -34,21 +34,47 @@ class GapFillingDataset(Dataset):
         avg_target = target_data['avg_target'].values
         target = target_data['target'].values
         mask = target_data['mask'].values
-        hours = target_data['date'].dt.hour
+        
+        # Extract time features
+        hour_of_day = target_data['date'].dt.hour
+        day_of_week = target_data['date'].dt.dayofweek # Monday=0, ..., Sunday=6
+        day_of_month = target_data['date'].dt.day - 1 # 0-indexed
+        day_of_year = target_data['date'].dt.dayofyear - 1 # 0-indexed
+
+        # Calculate number of days
+        days_in_month = target_data['date'].dt.days_in_month
+        year = target_data['date'].dt.year
+        is_leap_year = ((year % 4 == 0) & ((year % 100 != 0) | (year % 400 == 0)))
+        days_in_year = is_leap_year.where(is_leap_year, 365).where(~is_leap_year, 366)
+
+        # Calculate hourly progressions
+        hour_of_week = (day_of_week * 24 + hour_of_day) / (7 * 24)
+        hour_of_month = (day_of_month * 24 + hour_of_day) / (days_in_month * 24)
+        hour_of_year = (day_of_year * 24 + hour_of_day) / (days_in_year * 24)
 
         # Convert to tensors
         covariates = torch.tensor(covariates, dtype=torch.float32)
         avg_target = torch.tensor(avg_target, dtype=torch.float32).unsqueeze(-1)
         target = torch.tensor(target, dtype=torch.float32).unsqueeze(-1)
         mask = torch.tensor(mask, dtype=torch.bool).unsqueeze(-1)
-        hours = torch.tensor(hours, dtype=torch.float32).unsqueeze(-1)
+        hour_of_day = torch.tensor(hour_of_day, dtype=torch.float32).unsqueeze(-1)
+        hour_of_week = torch.tensor(hour_of_week, dtype=torch.float32).unsqueeze(-1)
+        hour_of_month = torch.tensor(hour_of_month, dtype=torch.float32).unsqueeze(-1)
+        hour_of_year = torch.tensor(hour_of_year, dtype=torch.float32).unsqueeze(-1)
+        days_in_month = torch.tensor(days_in_month, dtype=torch.float32).unsqueeze(-1)
+        days_in_year = torch.tensor(days_in_year, dtype=torch.float32).unsqueeze(-1)
 
         return {
             'covariates': covariates, 
             'avg_target': avg_target,
             'target': target, 
             'mask': mask, 
-            'hours': hours,
+            'hour_of_day': hour_of_day,
+            'hour_of_week': hour_of_week,
+            'hour_of_month': hour_of_month,
+            'hour_of_year': hour_of_year,
+            'days_in_month': days_in_month,
+            'days_in_year': days_in_year,
             'unix_date': unix_date,
             'file': file,
             'key': key,

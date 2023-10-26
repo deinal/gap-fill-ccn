@@ -35,8 +35,14 @@ class GapT(pl.LightningModule):
         else:
             raise ValueError('Invalid mode')
         
+        if time_encoding:
+            assert d_model % 4 == 0, 'd_embedding should be divisible by number of time features'
+
         if time_encoding == 'time2vec':
-            self.time2vec = Time2Vec(1, self.d_embedding)
+            self.time2vec_day = Time2Vec(1, self.d_embedding // 4)
+            self.time2vec_week = Time2Vec(1, self.d_embedding // 4)
+            self.time2vec_month = Time2Vec(1, self.d_embedding // 4)
+            self.time2vec_year = Time2Vec(1, self.d_embedding // 4)
         
         if encoder_type == 'transformer':
             transformer_layer = nn.TransformerEncoderLayer(
@@ -105,23 +111,40 @@ class GapT(pl.LightningModule):
 
     def forward(self, batch):
         if self.time_encoding == 'time2vec':
-            positional_encoding = self.time2vec(batch['hours'])
+            day_enc = self.time2vec_day(batch['hour_of_day'])
+            week_enc = self.time2vec_week(batch['hour_of_week'])
+            month_enc = self.time2vec_month(batch['hour_of_month'])
+            year_enc = self.time2vec_year(batch['hour_of_year'])
+            positional_encoding = torch.cat([day_enc, week_enc, month_enc, year_enc], dim=-1)
         elif self.time_encoding == 'periodic':
-            positional_encoding = periodic_positional_encoding(batch['hours'], self.d_embedding, period=24)
-        else:
-            positional_encoding = torch.zeros_like(embedded_cov)
+            day_enc = periodic_positional_encoding(batch['hour_of_day'], self.d_embedding // 4, period=24)
+            week_enc = periodic_positional_encoding(batch['hour_of_week'], self.d_embedding // 4, period=7*24)
+            month_enc = periodic_positional_encoding(batch['hour_of_month'], self.d_embedding // 4, period=batch['days_in_month']*24)
+            year_enc = periodic_positional_encoding(batch['hour_of_year'], self.d_embedding // 4, period=batch['days_in_year']*24)
+            positional_encoding = torch.cat([day_enc, week_enc, month_enc, year_enc], dim=-1)
 
         if self.mode == 'default':
             # Embed covariates and target separately
-            embedded_cov = self.embedding_cov(batch['covariates']) + positional_encoding
-            embedded_tgt = self.embedding_tgt(batch['avg_target']) + positional_encoding
+            embedded_cov = self.embedding_cov(batch['covariates'])
+            embedded_tgt = self.embedding_tgt(batch['avg_target'])
+            
+            # Add encoded time
+            if self.time_encoding:
+                embedded_cov = self.embedding_cov(embedded_cov) + positional_encoding
+                embedded_tgt = self.embedding_tgt(embedded_tgt) + positional_encoding
+            
             # Concatenate the embeddings
             embedding = torch.cat([embedded_cov, embedded_tgt], dim=-1)
         elif self.mode == 'naive':
             # Concatenate covariates and target
             inputs = torch.cat([batch['covariates'], batch['avg_target']], dim=-1)
+
             # Embed inputs 
-            embedding = self.embedding(inputs) + positional_encoding
+            embedding = self.embedding(inputs)
+
+            # Add encoded time
+            if self.time_encoding:
+                embedding = embedding + positional_encoding
         else:
             raise ValueError('Invalid mode')
         

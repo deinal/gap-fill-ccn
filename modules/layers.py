@@ -94,12 +94,11 @@ class TCN(nn.Module):
     def __init__(self, input_size, hidden_size, n_layers, kernel_size, dropout):
         super(TCN, self).__init__()
         layers = []
-        num_channels = [hidden_size] * n_layers
-        num_levels = len(num_channels)
-        for i in range(num_levels):
+        channels = [hidden_size] * n_layers
+        for i in range(n_layers):
             dilation_size = 2 ** i
-            in_channels = input_size if i == 0 else num_channels[i-1]
-            out_channels = num_channels[i]
+            in_channels = input_size if i == 0 else channels[i-1]
+            out_channels = channels[i]
             layers += [TemporalBlock(in_channels, out_channels, kernel_size, stride=1, dilation=dilation_size, dropout=dropout)]
         self.network = nn.Sequential(*layers)
     
