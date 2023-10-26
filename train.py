@@ -5,11 +5,10 @@ import argparse
 import pytorch_lightning as pl
 from torch.utils.data import DataLoader
 from modules.constants import feature_list
+from modules.utils import LossCallback
 from modules.data import GapFillingDataset
 from modules.gapt import GapT
 from modules.baseline import Baseline
-from modules.rnn import RNN
-from modules.mlp import MLP
 
 
 if __name__ == '__main__':
@@ -17,7 +16,7 @@ if __name__ == '__main__':
     parser.add_argument('--model', type=str, default='gapt', choices=['gapt', 'baseline'])
     parser.add_argument('--mode', type=str, default='default', choices=['default', 'naive'])
     parser.add_argument('--encoder_type', type=str, default='transformer',  choices=['transformer', 'lstm', 'gru', 'tcn', 'mlp'])
-    parser.add_argument('--time_encoding', type=str, default='time2vec', choices=['time2vec', 'periodic', 'none'])
+    parser.add_argument('--time_encoding', type=str, default=None, choices=['time2vec', 'periodic'])
     parser.add_argument('--d_output', type=int, default=1)
     parser.add_argument('--n_head', type=int, default=4)
     parser.add_argument('--d_model', type=int, default=64)
@@ -86,6 +85,9 @@ if __name__ == '__main__':
         )
     else:
         raise ValueError(f'Invalid model type: {args.model}')
+    
+    # Store loss
+    loss_callback = LossCallback()
 
     # Initialize a trainer
     trainer = pl.Trainer(
@@ -93,14 +95,15 @@ if __name__ == '__main__':
         devices=args.devices,
         max_epochs=args.epochs, 
         log_every_n_steps=1,
-        logger=pl.loggers.TensorBoardLogger('logs/')
+        logger=pl.loggers.TensorBoardLogger('logs/'),
+        callbacks=[loss_callback],
     )
 
     # Train the model
     trainer.fit(model, train_dataloader, val_dataloader)
 
     # Test the model
-    results = trainer.test(dataloaders=[train_dataloader, val_dataloader, test_dataloader])
+    metrics = trainer.test(dataloaders=[train_dataloader, val_dataloader, test_dataloader])
 
     # Save the model
     trainer.save_checkpoint(os.path.join(args.output_dir, 'model.ckpt'))
@@ -109,8 +112,9 @@ if __name__ == '__main__':
     metadata = {
         'args': vars(args),
         'feature_list': feature_list,
-        'loss_values': results,
+        'metrics': metrics,
         'params': sum(p.numel() for p in model.parameters() if p.requires_grad),
+        'epoch_losses': loss_callback.losses,
     }
 
     with open(os.path.join(args.output_dir, 'metadata.json'), 'w') as f:

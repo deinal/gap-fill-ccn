@@ -1,5 +1,6 @@
 import math
 import torch
+from pytorch_lightning as pl
 
 
 def periodic_positional_encoding(t, dim, period=24):
@@ -17,3 +18,16 @@ def baseline_positional_encoding(t, dim):
     pe[:, :, 0::2] = torch.sin(t * div_term)
     pe[:, :, 1::2] = torch.cos(t * div_term)
     return pe
+
+class LossCallback(pl.callbacks.Callback):
+    def __init__(self):
+        super().__init__()
+        self.losses = {'train': [], 'val': []}
+
+    def on_train_epoch_end(self, trainer, pl_module):
+        avg_train_loss = trainer.callback_metrics['train_loss']
+        self.losses['train'].append(avg_train_loss.item())
+
+    def on_validation_epoch_end(self, trainer, pl_module):
+        avg_val_loss = trainer.callback_metrics['val_loss']
+        self.losses['val'].append(avg_val_loss.item())
