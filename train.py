@@ -14,20 +14,23 @@ from modules.mlp import MLP
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
+    parser.add_argument('--model', type=str, default='gapt', choices=['gapt', 'baseline'])
+    parser.add_argument('--mode', type=str, default='default', choices=['default', 'naive'])
+    parser.add_argument('--encoder_type', type=str, default='transformer',  choices=['transformer', 'lstm', 'gru', 'tcn', 'mlp'])
+    parser.add_argument('--time_encoding', type=str, default='time2vec', choices=['time2vec', 'periodic', 'none'])
     parser.add_argument('--d_output', type=int, default=1)
     parser.add_argument('--n_head', type=int, default=4)
     parser.add_argument('--d_model', type=int, default=64)
     parser.add_argument('--d_embedding', type=int, default=64)
     parser.add_argument('--n_layers', type=int, default=2)
-    parser.add_argument('--d_feedforward', type=int, default=128)
-    parser.add_argument('--batch_size', type=int, default=32)
+    parser.add_argument('--kernel_size', type=int, default=3)
+    parser.add_argument('--d_hidden', type=int, default=128)
+    parser.add_argument('--enc_dropout', type=float, default=0.0)
+    parser.add_argument('--ff_dropout', type=float, default=0.2)
     parser.add_argument('--learning_rate', type=float, default=0.1)
-    parser.add_argument('--dropout_rate', type=float, default=0.0)
     parser.add_argument('--optimizer', type=str, default='momo', choices=['momo', 'adam'])
-    parser.add_argument('--model', type=str, default='gapt', choices=['gapt', 'baseline', 'gru', 'lstm', 'mlp'])
-    parser.add_argument('--mode', type=str, default='default', choices=['default', 'naive'])
+    parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--epochs', type=int, default=1)
-    parser.add_argument('--data_splits', default=[0.8, 0.1, 0.1], nargs=3, type=float)
     parser.add_argument('--data_dir', type=str)
     parser.add_argument('--output_dir', type=str)
     parser.add_argument('--devices', default=1, type=int)
@@ -52,19 +55,24 @@ if __name__ == '__main__':
 
     # Initialize the model
     d_input = len(feature_list)
-    
+
     if args.model == 'gapt':
         model = GapT(
+            encoder_type=args.encoder_type,
+            mode=args.mode,
+            time_encoding=args.time_encoding,
             d_input=d_input,
             d_model=args.d_model,
             n_head=args.n_head,
-            d_feedforward=args.d_feedforward,
+            kernel_size=args.kernel_size,
+            d_hidden=args.d_hidden,
             n_layers=args.n_layers,
             d_output=args.d_output, 
+            enc_dropout=args.enc_dropout,
+            ff_dropout=args.ff_dropout,
             learning_rate=args.learning_rate,
-            dropout_rate=args.dropout_rate,
             optimizer=args.optimizer,
-            mode=args.mode,
+            
         )
     elif args.model == 'baseline':
         model = Baseline(
@@ -73,26 +81,7 @@ if __name__ == '__main__':
             d_model=args.d_model,
             d_output=args.d_output,
             learning_rate=args.learning_rate,
-            dropout_rate=args.dropout_rate,
-            optimizer=args.optimizer,
-        )
-    elif args.model == 'gru' or args.model == 'lstm':
-        model = RNN(
-            net=args.model,
-            d_input=d_input,
-            d_model=args.d_model,
-            n_layers=args.n_layers,
-            d_output=args.d_output,
-            learning_rate=args.learning_rate,
-            dropout_rate=args.dropout_rate,
-            optimizer=args.optimizer,
-        )
-    elif args.model == 'mlp':
-        model = MLP(
-            d_input=d_input,
-            d_output=args.d_output,
-            learning_rate=args.learning_rate,
-            dropout_rate=args.dropout_rate,
+            dropout_rate=args.ff_dropout,
             optimizer=args.optimizer,
         )
     else:

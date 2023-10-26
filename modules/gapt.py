@@ -3,17 +3,25 @@ import torch.nn as nn
 import pytorch_lightning as pl
 import torch.nn.functional as F
 from torch.optim.lr_scheduler import LambdaLR
-from modules.utils import cyclic_positional_encoding
+from modules.utils import periodic_positional_encoding
+from modules.layers import TCN, MLP, Time2Vec
 from momo import Momo
 
+
 class GapT(pl.LightningModule):
-    def __init__(self, d_input, d_model, n_head, d_feedforward, n_layers, d_output, 
-                 learning_rate, dropout_rate, optimizer, mode, log_scaled=True):
+    def __init__(self, encoder_type, mode, time_encoding,
+                 n_layers, n_head, kernel_size,
+                 d_input, d_model, d_hidden, d_output, 
+                 enc_dropout, ff_dropout,
+                 learning_rate, optimizer, 
+                 log_scaled=True):
         super().__init__()
 
+        self.encoder_type = encoder_type
         self.learning_rate = learning_rate
         self.optimizer = optimizer
         self.mode = mode
+        self.time_encoding = time_encoding
         self.log_scaled = log_scaled
         
         if mode == 'default':
@@ -27,25 +35,81 @@ class GapT(pl.LightningModule):
         else:
             raise ValueError('Invalid mode')
         
-        transformer_enc_layer = nn.TransformerEncoderLayer(
-            d_model=d_model, nhead=n_head, dim_feedforward=d_feedforward, 
-            dropout=0, activation='gelu', batch_first=True
-        )
-        self.transformer_enc = nn.TransformerEncoder(transformer_enc_layer, num_layers=n_layers)
-
+        if time_encoding == 'time2vec':
+            self.time2vec = Time2Vec(1, self.d_embedding)
+        
+        if encoder_type == 'transformer':
+            transformer_layer = nn.TransformerEncoderLayer(
+                d_model=d_model,
+                nhead=n_head,
+                dim_feedforward=d_hidden, 
+                dropout=enc_dropout,
+                activation='gelu',
+                batch_first=True,
+            )
+            self.encoder = nn.TransformerEncoder(
+                transformer_layer,
+                num_layers=n_layers
+            )
+            ff_input = d_model
+        elif encoder_type == 'lstm':
+            self.encoder = nn.LSTM(
+                input_size=d_model, 
+                hidden_size=d_hidden,
+                num_layers=n_layers,
+                dropout=enc_dropout,
+                batch_first=True,
+                bidirectional=True,
+            )
+            ff_input = 2 * d_hidden
+        elif encoder_type == 'gru':
+            self.encoder = nn.GRU(
+                input_size=d_model,
+                hidden_size=d_hidden,
+                num_layers=n_layers,
+                dropout=enc_dropout,
+                batch_first=True,
+                bidirectional=True,
+            )
+            ff_input = 2 * d_hidden
+        elif encoder_type == 'tcn':
+            self.encoder = TCN(
+                input_size=d_model,
+                hidden_size=d_hidden,
+                n_layers=n_layers,
+                kernel_size=kernel_size,
+                dropout=enc_dropout,
+            )
+            ff_input = d_hidden
+        elif encoder_type == 'mlp':
+            self.encoder = MLP(
+                input_size=d_model,
+                hidden_size=d_hidden,
+                num_layers=n_layers,
+                dropout=enc_dropout,
+            )
+            ff_input = d_hidden
+        else:
+            raise ValueError('Invalid encoder')
+        
         self.feed_forward = nn.Sequential(
-            nn.Linear(d_model, 128),
+            nn.Linear(ff_input, 128),
             nn.GELU(),
-            nn.Dropout(dropout_rate),
+            nn.Dropout(ff_dropout),
             nn.Linear(128, 32),
             nn.GELU(),
-            nn.Dropout(dropout_rate),
+            nn.Dropout(ff_dropout),
         )
 
         self.head = nn.Linear(32, d_output)
 
     def forward(self, batch):
-        positional_encoding = cyclic_positional_encoding(batch['minutes'], self.d_embedding)
+        if self.time_encoding == 'time2vec':
+            positional_encoding = self.time2vec(batch['hours'])
+        elif self.time_encoding == 'periodic':
+            positional_encoding = periodic_positional_encoding(batch['hours'], self.d_embedding, period=24)
+        else:
+            positional_encoding = torch.zeros_like(embedded_cov)
 
         if self.mode == 'default':
             # Embed covariates and target separately
@@ -61,8 +125,11 @@ class GapT(pl.LightningModule):
         else:
             raise ValueError('Invalid mode')
         
-        # Apply transformer encoder
-        output = self.transformer_enc(embedding)
+        # Apply encoder
+        if self.encoder_type in ['lstm', 'gru']:
+            output, _ = self.encoder(embedding)
+        else:
+            output = self.encoder(embedding)
 
         # Feed forward
         output = self.feed_forward(output)

@@ -34,21 +34,21 @@ class GapFillingDataset(Dataset):
         avg_target = target_data['avg_target'].values
         target = target_data['target'].values
         mask = target_data['mask'].values
-        minutes = target_data['date'].dt.hour * 60 + target_data['date'].dt.minute.values
+        hours = target_data['date'].dt.hour
 
         # Convert to tensors
         covariates = torch.tensor(covariates, dtype=torch.float32)
         avg_target = torch.tensor(avg_target, dtype=torch.float32).unsqueeze(-1)
         target = torch.tensor(target, dtype=torch.float32).unsqueeze(-1)
         mask = torch.tensor(mask, dtype=torch.bool).unsqueeze(-1)
-        minutes = torch.tensor(minutes, dtype=torch.float32).unsqueeze(-1)
+        hours = torch.tensor(hours, dtype=torch.float32).unsqueeze(-1)
 
         return {
             'covariates': covariates, 
             'avg_target': avg_target,
             'target': target, 
             'mask': mask, 
-            'minutes': minutes,
+            'hours': hours,
             'unix_date': unix_date,
             'file': file,
             'key': key,

@@ -38,7 +38,7 @@ class Baseline(pl.LightningModule):
         self.head = nn.Linear(32, d_output)
         
     def forward(self, batch):
-        positional_encoding = baseline_positional_encoding(batch['minutes'], self.d_embedding)
+        positional_encoding = baseline_positional_encoding(batch['hours'], self.d_embedding)
 
         # Embedding inputs
         embedded_cov = self.embedding_cov(batch['covariates']) + positional_encoding 
