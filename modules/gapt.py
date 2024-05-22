@@ -4,7 +4,9 @@ import pytorch_lightning as pl
 import torch.nn.functional as F
 from torch.optim.lr_scheduler import LambdaLR
 from modules.utils import periodic_positional_encoding
-from modules.layers import TCN, MLP, Time2Vec
+from modules.layers import MLP, Time2Vec
+from modules.tcn import TCN
+from modules.lru import LRU
 from momo import Momo
 
 
@@ -58,6 +60,15 @@ class GapT(pl.LightningModule):
                 num_layers=n_layers
             )
             ff_input = d_model
+        elif encoder_type == 'lru':
+            self.encoder = LRU(
+                input_size=d_model, 
+                hidden_size=d_hidden,
+                num_layers=n_layers,
+                dropout=enc_dropout,
+                bidirectional=True,
+            )
+            ff_input = 2 * d_hidden  
         elif encoder_type == 'lstm':
             self.encoder = nn.LSTM(
                 input_size=d_model, 
@@ -68,6 +79,7 @@ class GapT(pl.LightningModule):
                 bidirectional=True,
             )
             ff_input = 2 * d_hidden
+            self.layer_norm = nn.LayerNorm(2 * d_hidden)
         elif encoder_type == 'gru':
             self.encoder = nn.GRU(
                 input_size=d_model,
@@ -78,6 +90,7 @@ class GapT(pl.LightningModule):
                 bidirectional=True,
             )
             ff_input = 2 * d_hidden
+            self.layer_norm = nn.LayerNorm(2 * d_hidden)
         elif encoder_type == 'tcn':
             self.encoder = TCN(
                 input_size=d_model,
@@ -130,8 +143,8 @@ class GapT(pl.LightningModule):
             
             # Add encoded time
             if self.time_encoding:
-                embedded_cov = self.embedding_cov(embedded_cov) + positional_encoding
-                embedded_tgt = self.embedding_tgt(embedded_tgt) + positional_encoding
+                embedded_cov = embedded_cov + positional_encoding
+                embedded_tgt = embedded_tgt + positional_encoding
             
             # Concatenate the embeddings
             embedding = torch.cat([embedded_cov, embedded_tgt], dim=-1)
@@ -151,6 +164,7 @@ class GapT(pl.LightningModule):
         # Apply encoder
         if self.encoder_type in ['lstm', 'gru']:
             output, _ = self.encoder(embedding)
+            output = self.layer_norm(output)
         else:
             output = self.encoder(embedding)
 

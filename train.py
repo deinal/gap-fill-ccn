@@ -15,7 +15,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', type=str, default='gapt', choices=['gapt', 'baseline'])
     parser.add_argument('--mode', type=str, default='default', choices=['default', 'naive'])
-    parser.add_argument('--encoder_type', type=str, default='transformer',  choices=['transformer', 'lstm', 'gru', 'tcn', 'mlp'])
+    parser.add_argument('--encoder_type', type=str, default='transformer',  choices=['transformer', 'lru', 'lstm', 'gru', 'tcn', 'mlp'])
     parser.add_argument('--time_encoding', type=str, default=None, choices=['time2vec', 'periodic'])
     parser.add_argument('--d_output', type=int, default=1)
     parser.add_argument('--n_head', type=int, default=4)

@@ -1,6 +1,6 @@
 import math
 import torch
-from pytorch_lightning as pl
+import pytorch_lightning as pl
 
 
 def periodic_positional_encoding(t, dim, period=24):

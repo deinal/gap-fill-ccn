@@ -45,7 +45,7 @@ class GapFillingDataset(Dataset):
         days_in_month = target_data['date'].dt.days_in_month
         year = target_data['date'].dt.year
         is_leap_year = ((year % 4 == 0) & ((year % 100 != 0) | (year % 400 == 0)))
-        days_in_year = is_leap_year.where(is_leap_year, 365).where(~is_leap_year, 366)
+        days_in_year = is_leap_year.apply(lambda x: 366 if x else 365)
 
         # Calculate hourly progressions
         hour_of_week = (day_of_week * 24 + hour_of_day) / (7 * 24)
