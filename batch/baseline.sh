@@ -1,5 +1,4 @@
 #!/bin/bash
-#SBATCH --account=project_2007839
 #SBATCH --ntasks=1
 #SBATCH --partition=gpu
 #SBATCH --time=04:00:00

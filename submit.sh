@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Directories
-RESULTS_DIR="baseline_5"
+RESULTS_DIR="results"
 DATA_DIRS=("data/two_week_seq")
 SEQUENCE=("two_week_seq")
 
