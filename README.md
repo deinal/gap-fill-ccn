@@ -21,12 +21,14 @@ GapT is evaluated here using aerosol concentration data ($N_{100}$) from 31 stat
 Given a time series of measurements, the objective is to predict missing values within a target sequence using covariates and the incomplete sequence of targets. This is formulated as:
 
 Let $x_i(t)$ be the set of observed variables such that $\forall i \in [1, n], \forall t \in [1, T], x_i(t) \in \mathbb{R}$ and let $z_i(t)$ be the set of non-observed variables such that $\forall i \in [1, m], \forall t \in [1, T], z_i(t) \in \mathbb{R}$. Filling in missing target values can then be written as the mapping:
+
 $$
 \begin{aligned}
-    y(t&) = f(x_1 (t), \ldots, x_n(t), z_1(t), \ldots, z_m(t)) \in \mathbb{R}, \\
+    &y(t)=f(x_1 (t), \ldots, x_n(t), z_1(t), \ldots, z_m(t)) \in \mathbb{R}, \\
     &\forall i \in [1, n], \exists \tau_i \in \mathbb{R}\ \mathrm{s.t.}\ x_i(t) = x_i(t+\tau_i) + \epsilon.
 \end{aligned}
 $$
+
 In this formulation, $x$ denotes the sequence of covariates, and $y$ the sequence of targets. This framework leverages information from the past, present and future to fill in missing data. Below is a visualization of the task for our atmospheric data, with covariates in a reduced opacity and the target gap in blue:
 
 <img src="figures/timeseries_fts.png" width="800">
